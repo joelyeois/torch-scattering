@@ -17,8 +17,8 @@ from torch_multislice._core import (
 
 def multislice(
     potential: torch.Tensor,
-    pixel_size: float,
-    energy: float,
+    pixel_size: float | torch.Tensor,
+    energy: float | torch.Tensor,
 ) -> torch.Tensor:
     """
     Compute the 2D exit wave from a 3D scattering potential.
@@ -28,10 +28,10 @@ def multislice(
     potential : torch.Tensor
         Complex-valued 3D scattering potential, shape (..., Z, H, W), where
         Z is the number of slices along the beam direction.
-    pixel_size : float
+    pixel_size : float | torch.Tensor
         Pixel size in Angstroms. The slice thickness `dz` is assumed to
         equal `pixel_size`.
-    energy : float
+    energy : float | torch.Tensor
         Electron beam energy in kiloelectronvolts (e.g. 300 for 300 kV).
 
     Returns
@@ -45,16 +45,23 @@ def multislice(
     zero-phase) plane wave. Each slice is applied via `multislice_step`,
     alternating transmission through the slice with Fresnel propagation to
     the next one.
+
+    `torch_grid_utils.fftfreq_grid` only accepts a plain float for its
+    `spacing` argument, so if `pixel_size` is a tensor, the frequency grid
+    itself is built from a detached float copy; `pixel_size` still flows
+    as a tensor into the propagator and transmission function, so gradients
+    with respect to it are not lost, just not routed through the grid
+    spacing.
     """
     wavelength_m = calculate_relativistic_electron_wavelength(energy * 1.0e3)
-    wavelength = float(wavelength_m) * 1.0e10  # meters -> Angstroms
-    sigma = interaction_parameter(wavelength=wavelength, energy=energy)
+    wavelength = wavelength_m * 1.0e10  # meters -> Angstroms
+    sigma = interaction_parameter(energy=energy)
 
     height, width = potential.shape[-2:]
     frequency_grid = fftfreq_grid(
         image_shape=(height, width),
         rfft=False,
-        spacing=pixel_size,
+        spacing=float(pixel_size),
         norm=True,
         device=potential.device,
     )

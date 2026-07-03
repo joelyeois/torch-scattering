@@ -1964,7 +1964,7 @@ wheels = [
 ]
 
 [[package]]
-name = "torch-multislice"
+name = "torch-scattering"
 source = { editable = "." }
 dependencies = [
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },

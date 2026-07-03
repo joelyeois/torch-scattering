@@ -1,11 +1,13 @@
-"""Tests for pure-math multislice primitives in torch_multislice._core."""
+"""Tests for pure-math multislice primitives in torch_scattering._core."""
 
+import pytest
 import torch
 from scipy import constants as C
 from torch_ctf import calculate_relativistic_electron_wavelength
 from torch_grid_utils import fftfreq_grid
 
-from torch_multislice._core import (
+from torch_scattering._core import (
+    chunk_slices,
     fresnel_propagator,
     interaction_parameter,
     multislice_step,
@@ -105,6 +107,37 @@ def test_transmission_function_attenuates_absorptive_potential():
     transmission = transmission_function(potential_slice, sigma=1.0, dz=1.0)
     expected = torch.exp(torch.tensor(-1.0)).to(torch.complex64).reshape(1, 1)
     assert torch.allclose(transmission, expected)
+
+
+def test_chunk_slices_back_loads_remainder():
+    """10 slices into 3 chunks should give [3, 3, 4], not [4, 3, 3].
+
+    Unlike torch.chunk/torch.tensor_split (which front-load the
+    remainder), chunk_slices puts the extra slice(s) in the last chunk.
+    """
+    assert chunk_slices(10, 3) == [3, 3, 4]
+
+
+def test_chunk_slices_evenly_divisible():
+    """When total_slices divides evenly, every chunk is the same size."""
+    assert chunk_slices(9, 3) == [3, 3, 3]
+
+
+def test_chunk_slices_one_chunk_per_slice():
+    """n_chunks == total_slices should give one slice per chunk."""
+    assert chunk_slices(5, 5) == [1, 1, 1, 1, 1]
+
+
+def test_chunk_slices_single_chunk():
+    """n_chunks == 1 should put every slice in one chunk."""
+    assert chunk_slices(5, 1) == [5]
+
+
+@pytest.mark.parametrize("n_chunks", [0, -1, 6])
+def test_chunk_slices_rejects_invalid_n_chunks(n_chunks):
+    """n_chunks must be in (0, total_slices]: 0, negative, too large all invalid."""
+    with pytest.raises(ValueError):
+        chunk_slices(5, n_chunks)
 
 
 def test_multislice_step_conserves_energy_for_real_potential():

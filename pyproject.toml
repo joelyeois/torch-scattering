@@ -16,7 +16,7 @@ sources = ["src"]
 
 # https://peps.python.org/pep-0621/
 [project]
-name = "torch-multislice"
+name = "torch-scattering"
 dynamic = ["version"]
 description = "Multislice electron scattering simulation in PyTorch"
 readme = "README.md"
@@ -136,7 +136,7 @@ exclude_lines = [
 ]
 
 [tool.coverage.run]
-source = ["torch_multislice"]
+source = ["torch_scattering"]
 
 # https://github.com/mgedmin/check-manifest#configuration
 # add files that you want check-manifest to explicitly ignore here

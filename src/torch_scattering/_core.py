@@ -125,12 +125,52 @@ def multislice_step(
     ``wave_out = IFFT(FFT(wave * T) * H)``
     """
     transmitted = wave * transmission_function(potential_slice, sigma, dz)
-    # torch.fft.fft2/ifft2 are C-extension functions with no static return
-    # type, so mypy sees them as returning Any; annotate explicitly.
     propagated_wave: torch.Tensor = torch.fft.ifft2(
         torch.fft.fft2(transmitted) * propagator
     )
     return propagated_wave
+
+
+def chunk_slices(total_slices: int, n_chunks: int) -> list[int]:
+    """
+    Compute contiguous, back-loaded chunk sizes for coarsened multislice.
+
+    Parameters
+    ----------
+    total_slices : int
+        Total number of slices along the beam direction.
+    n_chunks : int
+        Desired number of chunks. Must satisfy ``0 < n_chunks <= total_slices``.
+
+    Returns
+    -------
+    list[int]
+        Chunk sizes summing to `total_slices`, length `n_chunks`, suitable
+        for `torch.split(..., split_size_or_sections=sizes, dim=...)`. Every
+        chunk has ``total_slices // n_chunks`` slices except the last,
+        which absorbs the remainder ``total_slices % n_chunks``. This is a
+        back-loaded remainder, unlike `torch.chunk`/`torch.tensor_split`,
+        which front-load it.
+
+    Raises
+    ------
+    ValueError
+        If `n_chunks` is not in ``(0, total_slices]``.
+
+    Examples
+    --------
+    >>> chunk_slices(10, 3)
+    [3, 3, 4]
+    """
+    if not (0 < n_chunks <= total_slices):
+        raise ValueError(
+            "n_chunks must satisfy 0 < n_chunks <= total_slices "
+            f"({total_slices}), got {n_chunks}"
+        )
+    base = total_slices // n_chunks
+    sizes = [base] * n_chunks
+    sizes[-1] += total_slices - base * n_chunks
+    return sizes
 
 
 def interaction_parameter(energy: float | torch.Tensor) -> float | torch.Tensor:

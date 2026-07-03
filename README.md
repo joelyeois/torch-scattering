@@ -1,4 +1,4 @@
-# torch-multislice
+# torch-scattering
 
 Multislice electron scattering simulation in PyTorch, for cryo-EM/cryo-ET forward modelling.
 

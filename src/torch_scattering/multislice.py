@@ -8,7 +8,8 @@ import torch
 from torch_ctf import calculate_relativistic_electron_wavelength
 from torch_grid_utils import fftfreq_grid
 
-from torch_multislice._core import (
+from torch_scattering._core import (
+    chunk_slices,
     fresnel_propagator,
     interaction_parameter,
     multislice_step,
@@ -19,6 +20,7 @@ def multislice(
     potential: torch.Tensor,
     pixel_size: float | torch.Tensor,
     energy: float | torch.Tensor,
+    n_slices: int | None = None,
 ) -> torch.Tensor:
     """
     Compute the 2D exit wave from a 3D scattering potential.
@@ -33,6 +35,14 @@ def multislice(
         equal `pixel_size`.
     energy : float | torch.Tensor
         Electron beam energy in kiloelectronvolts (e.g. 300 for 300 kV).
+    n_slices : int | None
+        Number of multislice steps to take. If `None` (default), every
+        slice of `potential` is propagated individually (equivalent to
+        `n_slices=Z`). If smaller than `Z`, slices are grouped into
+        `n_slices` contiguous chunks via `chunk_slices` (all but the last
+        chunk have the same size; the last absorbs the remainder), each
+        chunk's potential is summed, and propagated as one thicker slab.
+        Must satisfy ``0 < n_slices <= Z``.
 
     Returns
     -------
@@ -42,9 +52,11 @@ def multislice(
     Notes
     -----
     The incident wave entering the specimen is a uniform (unit-amplitude,
-    zero-phase) plane wave. Each slice is applied via `multislice_step`,
-    alternating transmission through the slice with Fresnel propagation to
-    the next one.
+    zero-phase) plane wave. Each chunk's summed potential is transmitted
+    with `dz=pixel_size` (the per-voxel Riemann-sum weight) and then
+    propagated with `dz=chunk_size * pixel_size` (the chunk's physical
+    thickness). `n_slices=None` propagates one true slice at a time and
+    is the most accurate setting; grouping trades accuracy for speed.
 
     `torch_grid_utils.fftfreq_grid` only accepts a plain float for its
     `spacing` argument, so if `pixel_size` is a tensor, the frequency grid
@@ -65,18 +77,27 @@ def multislice(
         norm=True,
         device=potential.device,
     )
-    propagator = fresnel_propagator(
-        frequency_grid, wavelength=wavelength, dz=pixel_size
-    )
 
     wave = torch.ones(
         (*potential.shape[:-3], height, width),
         dtype=potential.dtype,
         device=potential.device,
     )
-    n_slices = potential.shape[-3]
-    for i in range(n_slices):
+    total_slices = potential.shape[-3]
+    if n_slices is None:
+        n_slices = total_slices
+    sizes = chunk_slices(total_slices, n_slices)
+    # At most 2 distinct chunk sizes occur; build one propagator per size.
+    propagators = {
+        size: fresnel_propagator(
+            frequency_grid, wavelength=wavelength, dz=pixel_size * size
+        )
+        for size in set(sizes)
+    }
+    for chunk in torch.split(potential, sizes, dim=-3):
+        chunk_size = chunk.shape[-3]
+        potential_chunk = chunk.sum(dim=-3)
         wave = multislice_step(
-            wave, potential[..., i, :, :], propagator, sigma, pixel_size
+            wave, potential_chunk, propagators[chunk_size], sigma, pixel_size
         )
     return wave

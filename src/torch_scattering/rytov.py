@@ -5,13 +5,11 @@ stack on top of the pure-math primitives in `_core`.
 """
 
 import torch
-from torch_ctf import calculate_relativistic_electron_wavelength
-from torch_grid_utils import fftfreq_grid
 
 from torch_scattering._core import (
+    _prepare_propagation_parameters,
     chunk_slices,
     fresnel_propagator,
-    interaction_parameter,
 )
 
 
@@ -66,19 +64,11 @@ def rytov(
     .. [1] E. J. Kirkland, Advanced Computing in Electron Microscopy,
        Springer US, Boston, MA, 2010.
     """
-    wavelength_m = calculate_relativistic_electron_wavelength(energy * 1.0e3)
-    wavelength = wavelength_m * 1.0e10  # meters -> Angstroms
-    sigma = interaction_parameter(energy=energy)
-
-    total_slices, height, width = potential.shape[-3:]
-    frequency_grid = fftfreq_grid(
-        image_shape=(height, width),
-        rfft=False,
-        spacing=float(pixel_size),
-        norm=True,
-        device=potential.device,
+    wavelength, sigma, frequency_grid = _prepare_propagation_parameters(
+        potential, pixel_size, energy
     )
 
+    total_slices = potential.shape[-3]
     if n_slices is None:
         n_slices = total_slices
     sizes = chunk_slices(total_slices, n_slices)

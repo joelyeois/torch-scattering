@@ -1,16 +1,9 @@
-"""Pure-math primitives for the multislice algorithm.
-
-Most functions in this module take physical quantities (wavelength,
-sigma, frequency grid) as plain inputs supplied by the caller, requiring
-only ``torch`` and ``scipy.constants``. `interaction_parameter` is the one
-exception - it depends on ``torch_ctf`` for the relativistic electron
-wavelength, since wavelength is fully determined by energy and shouldn't
-be passed in separately.
-"""
+"""Pure-math primitives for scattering algorithms."""
 
 import torch
 from scipy import constants as C
 from torch_ctf import calculate_relativistic_electron_wavelength
+from torch_grid_utils import fftfreq_grid
 
 
 def fresnel_propagator(
@@ -206,3 +199,45 @@ def interaction_parameter(energy: float | torch.Tensor) -> float | torch.Tensor:
         2.0 * C.pi / (wavelength * ev) * ((ev + rest_ev) / (ev + 2.0 * rest_ev))
     )
     return sigma
+
+
+def _prepare_propagation_parameters(
+    potential: torch.Tensor,
+    pixel_size: float | torch.Tensor,
+    energy: float | torch.Tensor,
+) -> tuple[torch.Tensor, float | torch.Tensor, torch.Tensor]:
+    """
+    Compute the wavelength, interaction parameter, and frequency grid.
+
+    Shared setup for the high-level wrapper functions (`firstborn`,
+    `rytov`, `multislice`).
+
+    Parameters
+    ----------
+    potential : torch.Tensor
+        Complex-valued 3D scattering potential, shape (..., Z, H, W).
+    pixel_size : float | torch.Tensor
+        Pixel size in Angstroms.
+    energy : float | torch.Tensor
+        Electron beam energy in kiloelectronvolts.
+
+    Returns
+    -------
+    tuple[torch.Tensor, float | torch.Tensor, torch.Tensor]
+        `wavelength` in Angstroms, `sigma` (interaction parameter) in
+        rad/(V*Angstrom), and `frequency_grid`, the real-valued grid of
+        spatial frequency magnitudes (1/Angstrom), shape (H, W).
+    """
+    wavelength_m = calculate_relativistic_electron_wavelength(energy * 1.0e3)
+    wavelength = wavelength_m * 1.0e10  # meters -> Angstroms
+    sigma = interaction_parameter(energy=energy)
+
+    height, width = potential.shape[-2:]
+    frequency_grid = fftfreq_grid(
+        image_shape=(height, width),
+        rfft=False,
+        spacing=float(pixel_size),
+        norm=True,
+        device=potential.device,
+    )
+    return wavelength, sigma, frequency_grid

@@ -5,13 +5,11 @@ pure-math primitives in `_core`.
 """
 
 import torch
-from torch_ctf import calculate_relativistic_electron_wavelength
-from torch_grid_utils import fftfreq_grid
 
 from torch_scattering._core import (
+    _prepare_propagation_parameters,
     chunk_slices,
     fresnel_propagator,
-    interaction_parameter,
     multislice_step,
 )
 
@@ -65,19 +63,11 @@ def multislice(
     with respect to it are not lost, just not routed through the grid
     spacing.
     """
-    wavelength_m = calculate_relativistic_electron_wavelength(energy * 1.0e3)
-    wavelength = wavelength_m * 1.0e10  # meters -> Angstroms
-    sigma = interaction_parameter(energy=energy)
-
-    height, width = potential.shape[-2:]
-    frequency_grid = fftfreq_grid(
-        image_shape=(height, width),
-        rfft=False,
-        spacing=float(pixel_size),
-        norm=True,
-        device=potential.device,
+    wavelength, sigma, frequency_grid = _prepare_propagation_parameters(
+        potential, pixel_size, energy
     )
 
+    height, width = potential.shape[-2:]
     wave = torch.ones(
         (*potential.shape[:-3], height, width),
         dtype=potential.dtype,
